@@ -1,22 +1,42 @@
 from collections import namedtuple
-import typing, warnings, numpy
+import typing
+import warnings
+import numpy
 from numbers import Real as RealNumber
 from typing import Dict, Union, Hashable
 import pkg_resources
 from pkg_resources import DistributionNotFound
-
 from tequila.objective import Objective, Variable, assign_variable, format_variable_dictionary, QTensor
 from tequila.utils.exceptions import TequilaException, TequilaWarning
 from tequila.simulators.simulator_base import BackendCircuit, BackendExpectationValue
 from tequila.circuit.noise import NoiseModel
 from tequila.wavefunction.qubit_wavefunction import QubitWaveFunction
+from tequila.simulators.simulator_symbolic import BackendCircuitSymbolic, BackendExpectationValueSymbolic
 
-SUPPORTED_BACKENDS = ["qulacs", "qulacs_gpu", "qibo", "qiskit", "qiskit_gpu", "cirq", "pyquil", "symbolic", "qlm", "spex"]
+SUPPORTED_BACKENDS = [
+    "qulacs",
+    "qulacs_gpu",
+    "qibo",
+    "qiskit",
+    "qiskit_gpu",
+    "cirq",
+    "pyquil",
+    "symbolic",
+    "qlm",
+    "spex",
+    "aqt",
+    "mqp",
+    "ddsim",
+    "cudaq",
+]
+
 # TODO: Reenable noise for Qiskit
 SUPPORTED_NOISE_BACKENDS = ["cirq", "pyquil"]  # qulacs removed in v.1.9
-BackendTypes = namedtuple('BackendTypes', 'CircType ExpValueType')
+
+BackendTypes = namedtuple("BackendTypes", "CircType ExpValueType")
 INSTALLED_SIMULATORS = {}
 INSTALLED_SAMPLERS = {}
+
 
 HAS_QULACS = True
 INSTALLED_NOISE_SAMPLERS = {}
@@ -30,6 +50,15 @@ Check which simulators are installed
 We are distinguishing two classes of simulators: Samplers and full wavefunction simulators
 """
 
+# a check block for cudaq
+HAS_CUDAQ = True
+try:
+    from tequila.simulators.simulator_cudaq import BackendCircuitCudaq, BackendExpectationValueCudaq
+
+    INSTALLED_SIMULATORS["cudaq"] = BackendTypes(BackendCircuitCudaq, BackendExpectationValueCudaq)
+except ImportError:
+    HAS_CUDAQ = False
+
 
 HAS_SPEX = True
 try:
@@ -39,14 +68,33 @@ try:
 except ImportError:
     HAS_SPEX = False
 
+# mqp and aqt are samplers, not simulators
+HAS_AQT = True
+try:
+    from tequila.simulators.simulator_aqt import BackendCircuitAQT, BackendExpectationValueAQT
+
+    INSTALLED_SAMPLERS["aqt"] = BackendTypes(BackendCircuitAQT, BackendExpectationValueAQT)
+except ImportError:
+    HAS_AQT = False
+
+HAS_MQP = True
+try:
+    from tequila.simulators.simulator_mqp import BackendCircuitMQP, BackendExpectationValueMQP
+
+    INSTALLED_SAMPLERS["mqp"] = BackendTypes(BackendCircuitMQP, BackendExpectationValueMQP)
+except ImportError:
+    HAS_MQP = False
+
 
 HAS_QISKIT = True
 try:
     from tequila.simulators.simulator_qiskit import BackendCircuitQiskit, BackendExpectationValueQiskit
+
     HAS_QISKIT = True
     INSTALLED_SIMULATORS["qiskit"] = BackendTypes(BackendCircuitQiskit, BackendExpectationValueQiskit)
     INSTALLED_SAMPLERS["qiskit"] = BackendTypes(BackendCircuitQiskit, BackendExpectationValueQiskit)
     from tequila.simulators.simulator_qiskit import HAS_NOISE as HAS_QISKIT_NOISE
+
     if HAS_QISKIT_NOISE:
         INSTALLED_NOISE_SAMPLERS["qiskit"] = BackendTypes(BackendCircuitQiskit, BackendExpectationValueQiskit)
 except ImportError:
@@ -56,10 +104,12 @@ except ImportError:
 try:
     pkg_resources.require("qiskit-aer-gpu")
     from tequila.simulators.simulator_qiskit_gpu import BackendCircuitQiskitGpu, BackendExpectationValueQiskitGpu
+
     HAS_QISKIT_GPU = True
     INSTALLED_SIMULATORS["qiskit_gpu"] = BackendTypes(BackendCircuitQiskitGpu, BackendExpectationValueQiskitGpu)
     INSTALLED_SAMPLERS["qiskit_gpu"] = BackendTypes(BackendCircuitQiskitGpu, BackendExpectationValueQiskitGpu)
     from tequila.simulators.simulator_qiskit import HAS_NOISE as HAS_QISKIT_GPU_NOISE
+
     if HAS_QISKIT_GPU_NOISE:
         INSTALLED_NOISE_SAMPLERS["qiskit_gpu"] = BackendTypes(BackendCircuitQiskitGpu, BackendExpectationValueQiskitGpu)
 except (ImportError, DistributionNotFound):
@@ -69,6 +119,7 @@ except (ImportError, DistributionNotFound):
 HAS_QIBO = True
 try:
     from tequila.simulators.simulator_qibo import BackendCircuitQibo, BackendExpectationValueQibo
+
     HAS_QIBO = True
     INSTALLED_SIMULATORS["qibo"] = BackendTypes(BackendCircuitQibo, BackendExpectationValueQibo)
     INSTALLED_SAMPLERS["qibo"] = BackendTypes(BackendCircuitQibo, BackendExpectationValueQibo)
@@ -83,8 +134,9 @@ try:
     HAS_CIRQ = True
     INSTALLED_SIMULATORS["cirq"] = BackendTypes(CircType=BackendCircuitCirq, ExpValueType=BackendExpectationValueCirq)
     INSTALLED_SAMPLERS["cirq"] = BackendTypes(CircType=BackendCircuitCirq, ExpValueType=BackendExpectationValueCirq)
-    INSTALLED_NOISE_SAMPLERS["cirq"] = BackendTypes(CircType=BackendCircuitCirq,
-                                                    ExpValueType=BackendExpectationValueCirq)
+    INSTALLED_NOISE_SAMPLERS["cirq"] = BackendTypes(
+        CircType=BackendCircuitCirq, ExpValueType=BackendExpectationValueCirq
+    )
 
 except ImportError:
     HAS_CIRQ = False
@@ -95,12 +147,15 @@ try:
     from tequila.simulators.simulator_qulacs import BackendCircuitQulacs, BackendExpectationValueQulacs
 
     HAS_QULACS = True
-    INSTALLED_SIMULATORS["qulacs"] = BackendTypes(CircType=BackendCircuitQulacs,
-                                                  ExpValueType=BackendExpectationValueQulacs)
-    INSTALLED_SAMPLERS["qulacs"] = BackendTypes(CircType=BackendCircuitQulacs,
-                                                ExpValueType=BackendExpectationValueQulacs)
-    INSTALLED_NOISE_SAMPLERS["qulacs"] = BackendTypes(CircType=BackendCircuitQulacs,
-                                                      ExpValueType=BackendExpectationValueQulacs)
+    INSTALLED_SIMULATORS["qulacs"] = BackendTypes(
+        CircType=BackendCircuitQulacs, ExpValueType=BackendExpectationValueQulacs
+    )
+    INSTALLED_SAMPLERS["qulacs"] = BackendTypes(
+        CircType=BackendCircuitQulacs, ExpValueType=BackendExpectationValueQulacs
+    )
+    INSTALLED_NOISE_SAMPLERS["qulacs"] = BackendTypes(
+        CircType=BackendCircuitQulacs, ExpValueType=BackendExpectationValueQulacs
+    )
 except (ImportError, DistributionNotFound):
     HAS_QULACS = False
 
@@ -110,12 +165,15 @@ try:
     from tequila.simulators.simulator_qulacs_gpu import BackendCircuitQulacsGpu, BackendExpectationValueQulacsGpu
 
     HAS_QULACS_GPU = True
-    INSTALLED_SIMULATORS["qulacs_gpu"] = BackendTypes(CircType=BackendCircuitQulacsGpu,
-                                                  ExpValueType=BackendExpectationValueQulacsGpu)
-    INSTALLED_SAMPLERS["qulacs_gpu"] = BackendTypes(CircType=BackendCircuitQulacsGpu,
-                                                ExpValueType=BackendExpectationValueQulacsGpu)
-    INSTALLED_NOISE_SAMPLERS["qulacs_gpu"] = BackendTypes(CircType=BackendCircuitQulacsGpu,
-                                                      ExpValueType=BackendExpectationValueQulacsGpu)
+    INSTALLED_SIMULATORS["qulacs_gpu"] = BackendTypes(
+        CircType=BackendCircuitQulacsGpu, ExpValueType=BackendExpectationValueQulacsGpu
+    )
+    INSTALLED_SAMPLERS["qulacs_gpu"] = BackendTypes(
+        CircType=BackendCircuitQulacsGpu, ExpValueType=BackendExpectationValueQulacsGpu
+    )
+    INSTALLED_NOISE_SAMPLERS["qulacs_gpu"] = BackendTypes(
+        CircType=BackendCircuitQulacsGpu, ExpValueType=BackendExpectationValueQulacsGpu
+    )
 except (ImportError, DistributionNotFound):
     HAS_QULACS_GPU = False
 
@@ -142,11 +200,19 @@ try:
 except ImportError:
     HAS_QLM = False
 
-from tequila.simulators.simulator_symbolic import BackendCircuitSymbolic, BackendExpectationValueSymbolic
-
-INSTALLED_SIMULATORS["symbolic"] = BackendTypes(CircType=BackendCircuitSymbolic,
-                                                ExpValueType=BackendExpectationValueSymbolic)
+INSTALLED_SIMULATORS["symbolic"] = BackendTypes(
+    CircType=BackendCircuitSymbolic, ExpValueType=BackendExpectationValueSymbolic
+)
 HAS_SYMBOLIC = True
+
+HAS_DDSIM = True
+try:
+    from tequila.simulators.simulator_ddsim import BackendCircuitDDSim, BackendExpectationValueDDSim
+
+    INSTALLED_SIMULATORS["ddsim"] = BackendTypes(BackendCircuitDDSim, BackendExpectationValueDDSim)
+    INSTALLED_SAMPLERS["ddsim"] = BackendTypes(BackendCircuitDDSim, BackendExpectationValueDDSim)
+except ImportError:
+    HAS_DDSIM = False
 
 
 def show_available_simulators():
@@ -154,18 +220,22 @@ def show_available_simulators():
     print("{:15} | {:10} | {:10} | {:10} | {:10}".format("backend", "wfn", "sampling", "noise", "installed"))
     print("--------------------------------------------------------------------")
     for k in SUPPORTED_BACKENDS:
-        print("{:15} | {:10} | {:10} | {:10} | {:10}".format(k,
-                                                             str(k in INSTALLED_SIMULATORS),
-                                                             str(k in INSTALLED_SAMPLERS),
-                                                             str(k in INSTALLED_NOISE_SAMPLERS),
-                                                             str(k in INSTALLED_BACKENDS)))
+        print(
+            "{:15} | {:10} | {:10} | {:10} | {:10}".format(
+                k,
+                str(k in INSTALLED_SIMULATORS),
+                str(k in INSTALLED_SAMPLERS),
+                str(k in INSTALLED_NOISE_SAMPLERS),
+                str(k in INSTALLED_BACKENDS),
+            )
+        )
     if HAS_QISKIT and not HAS_QISKIT_NOISE:
         print("missing qiskit_aer: no noisy simulation")
 
 
-def pick_backend(backend: str = None, samples: int = None, noise: NoiseModel = None, device=None,
-                 exclude_symbolic: bool = True) -> str:
-
+def pick_backend(
+    backend: str = None, samples: int = None, noise: NoiseModel = None, device=None, exclude_symbolic: bool = True
+) -> str:
     """
     choose, or verify, a backend for the user.
     Parameters
@@ -188,11 +258,11 @@ def pick_backend(backend: str = None, samples: int = None, noise: NoiseModel = N
         the name of the chosen (or verified) backend.
     """
 
-    if len(INSTALLED_SIMULATORS) == 0:
+    if len(INSTALLED_SIMULATORS) == 0 and len(INSTALLED_SAMPLERS) == 0:
         raise TequilaException("No simulators installed on your system")
 
     if backend is None and device is not None:
-        raise TequilaException('device use requires backend specification!')
+        raise TequilaException("device use requires backend specification!")
 
     if backend is None:
         if noise is None:
@@ -205,30 +275,28 @@ def pick_backend(backend: str = None, samples: int = None, noise: NoiseModel = N
                     return f
         else:
             if samples is None:
-                raise TequilaException(
-                    "Noise requires sampling; please provide a positive, integer value for samples")
+                raise TequilaException("Noise requires sampling; please provide a positive, integer value for samples")
             for f in SUPPORTED_NOISE_BACKENDS:
                 return f
-            raise TequilaException(
-                            'Could not find any installed sampler!')
-
+            raise TequilaException("Could not find any installed sampler!")
 
     if hasattr(backend, "lower"):
         backend = backend.lower()
 
     if backend == "random":
         if device is not None:
-            raise TequilaException('cannot ask for a random backend and a specific device!')
+            raise TequilaException("cannot ask for a random backend and a specific device!")
         from numpy import random as random
         import time
-        state = random.RandomState(int(str(time.process_time()).split('.')[-1]) % 2 ** 32)
+
+        state = random.RandomState(int(str(time.process_time()).split(".")[-1]) % 2**32)
         if samples is None:
             backend = state.choice(list(INSTALLED_SIMULATORS.keys()), 1)[0]
         else:
             backend = state.choice(list(INSTALLED_SAMPLERS.keys()), 1)[0]
 
         if exclude_symbolic:
-            while (backend == "symbolic"):
+            while backend == "symbolic":
                 backend = state.choice(list(INSTALLED_SIMULATORS.keys()), 1)[0]
         return backend
 
@@ -241,19 +309,22 @@ def pick_backend(backend: str = None, samples: int = None, noise: NoiseModel = N
         raise TequilaException("Backend {backend} not installed or sampling not supported".format(backend=backend))
     elif noise is not None and samples is not None and backend not in INSTALLED_NOISE_SAMPLERS.keys():
         raise TequilaException(
-            "Backend {backend} not installed or else Noise has not been implemented".format(backend=backend))
+            "Backend {backend} not installed or else Noise has not been implemented".format(backend=backend)
+        )
 
     return backend
 
 
-def compile_objective(objective: typing.Union['Objective'],
-                      variables: typing.Dict['Variable', 'RealNumber'] = None,
-                      backend: str = None,
-                      samples: int = None,
-                      device: str = None,
-                      noise: NoiseModel = None,
-                      *args,
-                      **kwargs) -> Objective:
+def compile_objective(
+    objective: typing.Union["Objective"],
+    variables: typing.Dict["Variable", "RealNumber"] = None,
+    backend: str = None,
+    samples: int = None,
+    device: str = None,
+    noise: NoiseModel = None,
+    *args,
+    **kwargs,
+) -> Objective:
     """
     compile an objective to render it callable and return it.
     Parameters
@@ -285,7 +356,10 @@ def compile_objective(objective: typing.Union['Objective'],
     if variables is None:
         variables = {k: 0.0 for k in objective.extract_variables()}
 
-    ExpValueType = INSTALLED_SIMULATORS[pick_backend(backend=backend)].ExpValueType
+    if samples is None:
+        ExpValueType = INSTALLED_SIMULATORS[pick_backend(backend=backend)].ExpValueType
+    else:
+        ExpValueType = INSTALLED_SAMPLERS[pick_backend(backend=backend, samples=samples)].ExpValueType
     all_compiled = True
     # check if compiling is necessary
     for arg in objective.args:
@@ -293,7 +367,10 @@ def compile_objective(objective: typing.Union['Objective'],
             if not isinstance(arg, ExpValueType):
                 warnings.warn(
                     "Looks like part the objective was already compiled for another backend.\nFound ExpectationValue of type {} and {}\n... proceeding with hybrid\n".format(
-                        type(arg), ExpValueType), TequilaWarning)
+                        type(arg), ExpValueType
+                    ),
+                    TequilaWarning,
+                )
         elif hasattr(arg, "U") and not isinstance(arg, BackendExpectationValue):
             all_compiled = False
 
@@ -309,7 +386,9 @@ def compile_objective(objective: typing.Union['Objective'],
         for arg in argset:
             if hasattr(arg, "H") and hasattr(arg, "U") and not isinstance(arg, BackendExpectationValue):
                 if arg not in expectationvalues:
-                    compiled_expval = ExpValueType(arg, variables=variables, noise=noise, device=device, *args, **kwargs)
+                    compiled_expval = ExpValueType(
+                        arg, variables=variables, noise=noise, device=device, *args, **kwargs
+                    )
                     expectationvalues[arg] = compiled_expval
                 else:
                     compiled_expval = expectationvalues[arg]
@@ -321,14 +400,16 @@ def compile_objective(objective: typing.Union['Objective'],
         return type(objective)(args=compiled_sets[0], transformation=objective.transformation)
 
 
-def compile_circuit(abstract_circuit: 'QCircuit',
-                    variables: typing.Dict['Variable', 'RealNumber'] = None,
-                    backend: str = None,
-                    samples: int = None,
-                    noise: NoiseModel = None,
-                    device: str = None,
-                    *args,
-                    **kwargs) -> BackendCircuit:
+def compile_circuit(
+    abstract_circuit: "QCircuit",
+    variables: typing.Dict["Variable", "RealNumber"] = None,
+    backend: str = None,
+    samples: int = None,
+    noise: NoiseModel = None,
+    device: str = None,
+    *args,
+    **kwargs,
+) -> BackendCircuit:
     """
     compile a circuit to render it callable and return it.
     Parameters
@@ -354,8 +435,14 @@ def compile_circuit(abstract_circuit: 'QCircuit',
         the compiled circuit.
     """
 
-    CircType = INSTALLED_SIMULATORS[
-        pick_backend(backend=backend, samples=samples, noise=noise, device=device)].CircType
+    if samples is None:
+        CircType = INSTALLED_SIMULATORS[
+            pick_backend(backend=backend, samples=samples, noise=noise, device=device)
+        ].CircType
+    else:
+        CircType = INSTALLED_SAMPLERS[
+            pick_backend(backend=backend, samples=samples, noise=noise, device=device)
+        ].CircType
 
     # dummy variables
     if variables is None:
@@ -366,22 +453,27 @@ def compile_circuit(abstract_circuit: 'QCircuit',
             abstract_circuit = abstract_circuit.abstract_circuit
             warnings.warn(
                 "Looks like the circuit was already compiled for another backend.\nChanging from {} to {}\n".format(
-                    type(abstract_circuit), CircType), TequilaWarning)
+                    type(abstract_circuit), CircType
+                ),
+                TequilaWarning,
+            )
         else:
             return abstract_circuit
 
     return CircType(abstract_circuit=abstract_circuit, variables=variables, noise=noise, device=device, *args, **kwargs)
 
 
-def simulate(objective: typing.Union['Objective', 'QCircuit', 'QTensor'],
-             variables: Dict[Union[Variable, Hashable], RealNumber] = None,
-             samples: int = None,
-             backend: str = None,
-             noise: NoiseModel = None,
-             device: str = None,
-             initial_state: Union[int, QubitWaveFunction] = 0,
-             *args,
-             **kwargs) -> Union[RealNumber, QubitWaveFunction]:
+def simulate(
+    objective: typing.Union["Objective", "QCircuit", "QTensor"],
+    variables: Dict[Union[Variable, Hashable], RealNumber] = None,
+    samples: int = None,
+    backend: str = None,
+    noise: NoiseModel = None,
+    device: str = None,
+    initial_state: Union[int, QubitWaveFunction] = 0,
+    *args,
+    **kwargs,
+) -> Union[RealNumber, QubitWaveFunction]:
     """Simulate a tequila objective or circuit
 
     Parameters
@@ -417,10 +509,20 @@ def simulate(objective: typing.Union['Objective', 'QCircuit', 'QTensor'],
     if variables is None and not (len(objective.extract_variables()) == 0):
         raise TequilaException(
             "You called simulate for a parametrized type but forgot to pass down the variables: {}".format(
-                objective.extract_variables()))
+                objective.extract_variables()
+            )
+        )
 
-    compiled_objective = compile(objective=objective, samples=samples, variables=variables, backend=backend,
-                                 noise=noise, device=device, *args, **kwargs)
+    compiled_objective = compile(
+        objective=objective,
+        samples=samples,
+        variables=variables,
+        backend=backend,
+        noise=noise,
+        device=device,
+        *args,
+        **kwargs,
+    )
 
     return compiled_objective(variables=variables, samples=samples, initial_state=initial_state, *args, **kwargs)
 
@@ -448,6 +550,7 @@ def draw(objective, variables=None, backend: str = None, name=None, *args, **kwa
 
     if backend is None:
         from tequila.circuit.qpic import system_has_qpic
+
         if system_has_qpic:
             backend = "qpic"
         elif "cirq" in INSTALLED_SIMULATORS:
@@ -471,7 +574,7 @@ def draw(objective, variables=None, backend: str = None, name=None, *args, **kwa
                 print("total measurements = {}".format(measurements))
                 variables = E.U.extract_variables()
                 print("variables          = {}".format(len(variables)))
-                filename = "{}_{}.png".format(name,i)
+                filename = "{}_{}.png".format(name, i)
                 print("circuit            = {}".format(filename))
                 draw(E.U, backend=backend, filename=filename)
             drawn[E] = i
@@ -483,6 +586,7 @@ def draw(objective, variables=None, backend: str = None, name=None, *args, **kwa
                 import IPython
                 import qpic
                 from tequila.circuit.qpic import export_to
+
                 if "filename" not in kwargs:
                     kwargs["filename"] = "tmp_{}.png".format(hash(backend))
 
@@ -493,17 +597,21 @@ def draw(objective, variables=None, backend: str = None, name=None, *args, **kwa
                     circuit = objective.abstract_circuit
 
                 export_to(circuit=circuit, *args, **kwargs)
-                width=None # full size
-                height=200
+                width = None  # full size
+                height = 200
                 if "width" in kwargs:
-                    width=kwargs["width"]
+                    width = kwargs["width"]
                 if "height" in kwargs:
-                    height=kwargs["height"] # this is buggy in jupyter and will be ignored
-                image=IPython.display.Image(filename=kwargs["filename"], height=height, width=width)
+                    height = kwargs["height"]  # this is buggy in jupyter and will be ignored
+                image = IPython.display.Image(filename=kwargs["filename"], height=height, width=width)
                 IPython.display.display(image)
 
             except ImportError as E:
-                raise Exception("Original Error Message:{}\nYou are missing dependencies for drawing: You need IPython, qpic and pdfatex.\n".format(E))
+                raise Exception(
+                    "Original Error Message:{}\nYou are missing dependencies for drawing: You need IPython, qpic and pdfatex.\n".format(
+                        E
+                    )
+                )
         else:
             compiled = compile_circuit(abstract_circuit=objective, backend=backend)
             if backend == "qiskit":
@@ -512,14 +620,17 @@ def draw(objective, variables=None, backend: str = None, name=None, *args, **kwa
                 print(compiled.circuit)
                 return ""
 
-def compile(objective: typing.Union['Objective', 'QCircuit', 'QTensor'],
-            variables: Dict[Union['Variable', Hashable], RealNumber] = None,
-            samples: int = None,
-            backend: str = None,
-            noise: NoiseModel = None,
-            device: str = None,
-            *args,
-            **kwargs) -> typing.Union['BackendCircuit', 'Objective']:
+
+def compile(
+    objective: typing.Union["Objective", "QCircuit", "QTensor"],
+    variables: Dict[Union["Variable", Hashable], RealNumber] = None,
+    samples: int = None,
+    backend: str = None,
+    noise: NoiseModel = None,
+    device: str = None,
+    *args,
+    **kwargs,
+) -> typing.Union["BackendCircuit", "Objective"]:
     """Compile a tequila objective or circuit to a backend
 
     Parameters
@@ -552,21 +663,50 @@ def compile(objective: typing.Union['Objective', 'QCircuit', 'QTensor'],
 
     if isinstance(objective, QTensor):
         ff = numpy.vectorize(compile_objective)
-        return ff(objective=objective, samples=samples, variables=variables, backend=backend, noise=noise, device=device, *args, **kwargs)
-    
+        return ff(
+            objective=objective,
+            samples=samples,
+            variables=variables,
+            backend=backend,
+            noise=noise,
+            device=device,
+            *args,
+            **kwargs,
+        )
+
     if isinstance(objective, Objective) or hasattr(objective, "args"):
-        return compile_objective(objective=objective, samples=samples, variables=variables, backend=backend, noise=noise, device=device, *args, **kwargs)
+        return compile_objective(
+            objective=objective,
+            samples=samples,
+            variables=variables,
+            backend=backend,
+            noise=noise,
+            device=device,
+            *args,
+            **kwargs,
+        )
     elif hasattr(objective, "gates") or hasattr(objective, "abstract_circuit"):
-        return compile_circuit(abstract_circuit=objective, variables=variables, backend=backend,samples=samples,
-                               noise=noise, device=device, *args, **kwargs)
+        return compile_circuit(
+            abstract_circuit=objective,
+            variables=variables,
+            backend=backend,
+            samples=samples,
+            noise=noise,
+            device=device,
+            *args,
+            **kwargs,
+        )
     else:
         raise TequilaException(
-            "Don't know how to compile object of type: {type}, \n{object}".format(type=type(objective),
-                                                                                  object=objective))
+            "Don't know how to compile object of type: {type}, \n{object}".format(
+                type=type(objective), object=objective
+            )
+        )
 
 
-def compile_to_function(objective: typing.Union['Objective', 'QCircuit'], *args,
-                        **kwargs) -> typing.Union['BackendCircuit', 'Objective']:
+def compile_to_function(
+    objective: typing.Union["Objective", "QCircuit"], *args, **kwargs
+) -> typing.Union["BackendCircuit", "Objective"]:
     """
     Notes
     ----------
@@ -585,16 +725,18 @@ def compile_to_function(objective: typing.Union['Objective', 'QCircuit'], *args,
     """
 
     compiled_objective = compile(objective, *args, **kwargs)
-    if 'variables' in kwargs:
-        varnames = list(kwargs['variables'].keys())
+    if "variables" in kwargs:
+        varnames = list(kwargs["variables"].keys())
     else:
         varnames = objective.extract_variables()
 
     def objective_function(*fargs, **fkwargs):
         if len(fargs) != len(varnames):
-            raise Exception("Compiled function takes {} variables. You passed down {} arguments."
-                            "Use keywords for samples and other instructions\n"
-                            "like function(a,b,c, samples=10)".format(len(varnames), len(fargs)))
+            raise Exception(
+                "Compiled function takes {} variables. You passed down {} arguments."
+                "Use keywords for samples and other instructions\n"
+                "like function(a,b,c, samples=10)".format(len(varnames), len(fargs))
+            )
         vars = {varnames[i]: fargs[i] for i, v in enumerate(fargs)}
         return compiled_objective(variables=vars, **fkwargs)
 
