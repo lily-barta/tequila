@@ -432,7 +432,7 @@ class BackendCircuit:
 
         return result
 
-    def sample(self, variables, samples, read_out_qubits=None, circuit=None, initial_state=0, *args, **kwargs):
+    def sample(self, variables, samples, read_out_qubits=None, circuit=None, initial_state=0, postprocessing=None, context=None,  *args, **kwargs):
         """
         Sample the circuit. If circuit natively equips paulistrings, sample therefrom.
         Parameters
@@ -470,7 +470,7 @@ class BackendCircuit:
         else:
             circuit = self.add_measurement(circuit=circuit, target_qubits=read_out_qubits)
 
-        return self.do_sample(
+        counts = self.do_sample(
             samples=samples,
             circuit=circuit,
             read_out_qubits=read_out_qubits,
@@ -478,6 +478,10 @@ class BackendCircuit:
             *args,
             **kwargs,
         )
+        if postprocessing is not None:
+            postprocessing(counts=counts, context=context)
+
+        return counts
 
     def sample_all_z_hamiltonian(
         self, samples: int, hamiltonian, variables, initial_state: Union[int, QubitWaveFunction] = 0, *args, **kwargs
@@ -517,6 +521,7 @@ class BackendCircuit:
             read_out_qubits=abstract_qubits_H,
             variables=variables,
             initial_state=initial_state,
+            context = f"Z({abstract_qubits_H})",
             *args,
             **kwargs,
         )
@@ -542,7 +547,7 @@ class BackendCircuit:
             assert n_samples == samples
         return E
 
-    def sample_paulistring(
+    def  sample_paulistring(
         self, samples: int, paulistring, variables, initial_state: Union[int, QubitWaveFunction] = 0, *args, **kwargs
     ) -> numbers.Real:
         """
@@ -572,9 +577,11 @@ class BackendCircuit:
         # make basis change and translate to backend
         basis_change = QCircuit()
         qubits = []
+        diagonal_ps = copy.deepcopy(reduced_ps)
         for idx, p in reduced_ps.items():
             qubits.append(idx)
             basis_change += change_basis(target=idx, axis=p)
+            diagonal_ps._data[idx] = "Z"
 
         # add basis change to the circuit
         # deepcopy is necessary to avoid changing the circuits
@@ -588,6 +595,7 @@ class BackendCircuit:
             read_out_qubits=qubits,
             variables=variables,
             initial_state=initial_state,
+            context = {"eigenbasis": str(reduced_ps.naked()), "coeff": reduced_ps.coeff},
             *args,
             **kwargs,
         )

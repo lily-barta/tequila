@@ -514,7 +514,7 @@ class BackendExpectationValueQulacs(BackendExpectationValue):
         return result
 
     def sample(
-        self, variables, samples, initial_state: Union[int, QubitWaveFunction] = 0, *args, **kwargs
+        self, variables, samples, initial_state: Union[int, QubitWaveFunction] = 0, postprocessing=None, *args, **kwargs
     ) -> numpy.array:
         """
         Sample this Expectation Value.
@@ -534,6 +534,8 @@ class BackendExpectationValueQulacs(BackendExpectationValue):
         numpy.ndarray:
             the result of sampling as a number.
         """
+        if postprocessing is not None:
+            warnings.warn("-->no postprocessing in qulacs backend<--")
         self.update_variables(variables)
         state = self.U.initialize_state(self.n_qubits, initial_state)
         self.U.circuit.update_quantum_state(state)
@@ -553,6 +555,7 @@ class BackendExpectationValueQulacs(BackendExpectationValue):
                         bc += change_basis(target=idx, axis=p)
                     qbc = self.U.create_circuit(abstract_circuit=bc, variables=None)
                     Esamples = []
+                    raw_samples = []
                     for sample in range(samples):
                         if self.U.has_noise and sample > 0:
                             state = self.U.initialize_state(self.n_qubits, initial_state)
@@ -572,6 +575,7 @@ class BackendExpectationValueQulacs(BackendExpectationValue):
                             measured = state_tmp.get_classical_value(self.U.qubit(idx))
                             ps_measure *= -2.0 * measured + 1.0  # 0 becomes 1 and 1 becomes -1
                         Esamples.append(ps_measure)
+                        raw_samples.append(measured)
                     E += ps.coeff * sum(Esamples) / len(Esamples)
             result.append(E)
         return numpy.asarray(result)
