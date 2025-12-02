@@ -486,8 +486,6 @@ class QCircuit:
 
         quimb_circuit = qtn.Circuit(self.n_qubits)
 
-        # quimb uses MSB convention, so we need to modify the qubit indices
-        # to LSB
         for g in compiled_circuit.gates:
             if g.name not in gate_mapping:
                 raise TequilaException(
@@ -499,19 +497,19 @@ class QCircuit:
                 quimb_circuit.apply_gate(
                     gate_mapping[g.name],
                     params=[float(g.parameter())],
-                    qubits=[abs(t - self.n_qubits + 1) for t in list(g.target)],
+                    qubits=[list(g.target)],
                     parameterize=True,
                 )
             elif g.is_controlled():
                 quimb_circuit.apply_gate(
                     gate_mapping[g.name],
-                    qubits=[abs(t - self.n_qubits + 1) for t in list(g.target)],
-                    controls=[abs(c - self.n_qubits + 1) for c in list(g.control)],
+                    qubits=[list(g.target)],
+                    controls=[list(g.control)],
                 )
             else:
                 quimb_circuit.apply_gate(
                     gate_mapping[g.name],
-                    qubits=[abs(t - self.n_qubits + 1) for t in list(g.target)],
+                    qubits=[list(g.target)],
                 )
 
         uni = quimb_circuit.get_uni()
